@@ -6,9 +6,9 @@ on:
       - main
 
 jobs:
-  deploy:
-    name: Build and publish to Raspberry Pi
-    runs-on: [self-hosted, linux, x64]
+  checks:
+    name: Run checks and build
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
@@ -23,12 +23,38 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run lint
+        run: npm run lint
+
       - name: Build site
         run: npm run build
 
-      - name: Publish to web root
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+  deploy:
+    name: Deploy to Raspberry Pi
+    needs: checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download dist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Install rsync and SSH client
+        run: sudo apt-get update && sudo apt-get install -y rsync openssh-client
+
+      - name: Start SSH agent
+        uses: webfactory/ssh-agent@v0.8.1
+        with:
+          ssh-private-key: ${{ secrets.PI_SSH_PRIVATE_KEY }}
+
+      - name: Deploy to Raspberry Pi
         run: |
-          sudo mkdir -p /var/www/html/bwille/dist
-          sudo rm -rf /var/www/html/bwille/dist/*
-          sudo cp -R dist/* /var/www/html/bwille/dist/
-        shell: bash
+          rsync -avz --delete --no-perms --no-times --omit-dir-times dist/ "${{ secrets.PI_USER }}@${{ secrets.PI_HOST }}:${{ secrets.PI_PATH }}"
